@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import os
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -37,19 +38,35 @@ def _path_allowed(url: str, prefixes: list) -> bool:
     return any(path.startswith(p) for p in prefixes)
 
 
-def _load_robots(client: httpx.Client, base_url: str) -> Optional[robotparser.RobotFileParser]:
-    """读取站点 robots.txt；获取失败视为全部允许（返回 None）。"""
+def _deny_all_robots() -> robotparser.RobotFileParser:
+    """全站拒绝的 robots parser（fail-closed 兜底）。"""
+    rp = robotparser.RobotFileParser()
+    rp.parse(["User-agent: *", "Disallow: /"])
+    return rp
+
+
+def _load_robots(client: httpx.Client, base_url: str) -> robotparser.RobotFileParser:
+    """读取站点 robots.txt，始终返回 parser：404 视为无限制，其余获取失败一律全站拒绝。"""
     parsed = urlparse(base_url)
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
     try:
         resp = client.get(robots_url)
-        if resp.status_code != 200:
-            return None
-        rp = robotparser.RobotFileParser()
-        rp.parse(resp.text.splitlines())
-        return rp
-    except Exception:
-        return None
+    except Exception as exc:
+        # 网络错误/超时等异常：fail-closed
+        logger.warning("robots.txt 获取异常（%s），按全站拒绝处理：%s", exc, robots_url)
+        return _deny_all_robots()
+    rp = robotparser.RobotFileParser()
+    if resp.status_code == 404:
+        rp.parse([])  # 无 robots.txt 按惯例允许全站
+    elif resp.status_code in (401, 403):
+        rp.disallow_all = True  # 与 robotparser 原生语义一致：401/403 全站拒绝
+    elif resp.status_code >= 400:
+        # 5xx 等服务端错误：fail-closed
+        logger.warning("robots.txt 获取失败（HTTP %s），按全站拒绝处理：%s", resp.status_code, robots_url)
+        return _deny_all_robots()
+    else:
+        rp.parse(resp.text.splitlines())  # 2xx：解析正文
+    return rp
 
 
 def extract_text(html: str):
@@ -145,9 +162,12 @@ def _process_attachments(
     session: Session,
     host: str,
     prefixes: list,
-    rp: Optional[robotparser.RobotFileParser],
+    rp: robotparser.RobotFileParser,
 ):
-    """下载页面中的附件链接并按版本留痕，返回 [(kind, old_attachment, new_attachment)]。"""
+    """下载页面中的附件链接并按版本留痕，返回 [(kind, old_attachment, new_attachment)]。
+
+    附件 robots 校验不随 source.respect_robots 开关关闭，rp 必传。
+    """
     updates = []
     seen = set()
     for a in soup.find_all("a", href=True):
@@ -160,7 +180,8 @@ def _process_attachments(
         if not _same_host(url, host) or not _path_allowed(url, prefixes):
             logger.info("附件超出来源白名单，跳过：%s", url)
             continue
-        if rp is not None and not rp.can_fetch(settings.crawl_user_agent, url):
+        # 附件 robots 校验强制执行，不受 source.respect_robots 影响
+        if not rp.can_fetch(settings.crawl_user_agent, url):
             logger.info("robots.txt 禁止抓取附件，跳过：%s", url)
             continue
         try:
@@ -241,7 +262,8 @@ def _crawl(source: Source, run: CrawlRun, session: Session) -> None:
         follow_redirects=True,
     )
     try:
-        rp = _load_robots(client, base_url) if source.respect_robots else None
+        # 每次运行无条件加载一次 robots.txt：附件强制校验；页面仅在 respect_robots 开启时校验
+        rp = _load_robots(client, base_url)
         queue = deque([base_url])
         seen = {base_url}
         pages = 0
@@ -249,7 +271,7 @@ def _crawl(source: Source, run: CrawlRun, session: Session) -> None:
             url = queue.popleft()
             if not _same_host(url, host) or not _path_allowed(url, prefixes):
                 continue
-            if rp is not None and not rp.can_fetch(settings.crawl_user_agent, url):
+            if source.respect_robots and not rp.can_fetch(settings.crawl_user_agent, url):
                 continue
             try:
                 resp = client.get(url)
@@ -332,12 +354,14 @@ def _crawl(source: Source, run: CrawlRun, session: Session) -> None:
                 notify.dispatch_for_change(session, change, doc, regulation, source)
                 run.changes_detected += 1
 
-            # BFS 发现同站新链接
+            # BFS 发现同站新链接（附件链接不入队：统一走附件管线，强制 robots 校验，避免借页面通道绕过）
             for a in soup.find_all("a", href=True):
                 next_url = urldefrag(urljoin(url, a["href"]))[0]
                 if next_url in seen or not next_url.startswith(("http://", "https://")):
                     continue
                 seen.add(next_url)
+                if os.path.splitext(urlparse(next_url).path)[1].lower() in ATTACH_EXTS:
+                    continue
                 if _same_host(next_url, host) and _path_allowed(next_url, prefixes):
                     queue.append(next_url)
     finally:

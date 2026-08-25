@@ -51,6 +51,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (res.status === 403) {
     const detail = await readDetail(res)
+    // 后端要求先修改初始密码时，统一跳转到修改密码页
+    if (detail && detail.includes('请先修改初始密码')) {
+      if (window.location.pathname !== '/change-password') {
+        window.location.href = '/change-password'
+      }
+      throw new Error(detail)
+    }
     throw new Error(detail ? `权限不足：${detail}` : '权限不足')
   }
   if (!res.ok) {

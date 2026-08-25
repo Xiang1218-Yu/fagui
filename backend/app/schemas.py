@@ -202,12 +202,18 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
+    must_change_password: bool
     created_at: datetime
 
 
 class TokenResponse(BaseModel):
     token: str
     user: UserOut
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 class CreateUserRequest(BaseModel):

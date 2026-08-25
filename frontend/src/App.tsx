@@ -10,6 +10,7 @@ import ImpactPage from './pages/ImpactPage'
 import ReviewPage from './pages/ReviewPage'
 import SubscriptionsPage from './pages/SubscriptionsPage'
 import LoginPage from './pages/LoginPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 import UsersPage from './pages/UsersPage'
 
 const navItems = [
@@ -23,8 +24,13 @@ const navItems = [
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation()
+  const user = useCurrentUser()
   if (!getToken()) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+  }
+  // 强制改密：除修改密码页外，其他页面一律重定向到 /change-password
+  if (user?.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />
   }
   return <>{children}</>
 }
@@ -78,6 +84,7 @@ function Layout() {
               <span className={`badge badge-role-${user.role}`}>{roleLabel[user.role]}</span>
             </div>
           )}
+          <NavLink to="/change-password" className="sidebar-chpwd">修改密码</NavLink>
           <button className="btn small sidebar-logout" onClick={handleLogout}>退出登录</button>
         </div>
       </aside>
@@ -107,6 +114,7 @@ export default function App() {
         <Route path="/impact" element={<ImpactPage />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="/subscriptions" element={<SubscriptionsPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route
           path="/users"
           element={

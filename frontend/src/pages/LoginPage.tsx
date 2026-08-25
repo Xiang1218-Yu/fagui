@@ -36,7 +36,7 @@ export default function LoginPage() {
       })
       setToken(res.token)
       localStorage.setItem('regintel_user', JSON.stringify(res.user))
-      navigate(from, { replace: true })
+      navigate(res.user.must_change_password ? '/change-password' : from, { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
     } finally {

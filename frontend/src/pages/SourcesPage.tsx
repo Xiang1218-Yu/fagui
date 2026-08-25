@@ -178,9 +178,12 @@ export default function SourcesPage() {
               <input id="f-enabled" type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
               <label htmlFor="f-enabled">启用</label>
             </div>
-            <div className="form-item checkbox-item">
-              <input id="f-robots" type="checkbox" checked={form.respect_robots} onChange={(e) => setForm({ ...form, respect_robots: e.target.checked })} />
-              <label htmlFor="f-robots">遵循 robots</label>
+            <div className="form-item">
+              <div className="form-item checkbox-item">
+                <input id="f-robots" type="checkbox" checked={form.respect_robots} onChange={(e) => setForm({ ...form, respect_robots: e.target.checked })} />
+                <label htmlFor="f-robots">遵循 robots 规则</label>
+              </div>
+              <span className="muted form-hint">附件下载始终强制遵循 robots 规则</span>
             </div>
           </div>
           <div className="btn-row">

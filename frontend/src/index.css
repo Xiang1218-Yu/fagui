@@ -458,6 +458,17 @@ button.btn:disabled {
   text-align: center;
 }
 
+/* 内容区居中卡片（修改密码页） */
+.center-wrap {
+  display: flex;
+  justify-content: center;
+  padding-top: 48px;
+}
+
+.form-hint {
+  font-size: 12px;
+}
+
 /* 侧边栏用户区 */
 .sidebar {
   display: flex;
@@ -486,6 +497,19 @@ button.btn:disabled {
   color: #fff;
   font-size: 13px;
   font-weight: 600;
+}
+
+.sidebar-chpwd {
+  display: block;
+  text-align: center;
+  color: #aab6c5;
+  font-size: 13px;
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+
+.sidebar-chpwd:hover {
+  color: #fff;
 }
 
 .sidebar-logout {

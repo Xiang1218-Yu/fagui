@@ -43,10 +43,15 @@ def get_current_token(request: Request, db: Session = Depends(get_db)) -> AuthTo
     return record
 
 
-def get_current_user(token: AuthToken = Depends(get_current_token), db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    request: Request, token: AuthToken = Depends(get_current_token), db: Session = Depends(get_db)
+) -> User:
     user = db.get(User, token.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="未认证或登录已过期")
+    # 待改初始密码的用户仅允许访问 /api/auth/ 下的接口（登录/改密/登出/me）
+    if user.must_change_password and not request.url.path.startswith("/api/auth/"):
+        raise HTTPException(status_code=403, detail="请先修改初始密码")
     return user
 
 

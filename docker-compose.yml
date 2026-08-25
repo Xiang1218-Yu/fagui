@@ -25,5 +25,57 @@ services:
       timeout: 3s
       retries: 10
 
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    # .env 可选：不存在时仅用下方带空默认值的插值变量
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/regintel
+      REDIS_URL: redis://redis:6379/0
+      SNAPSHOT_DIR: /app/data/snapshots
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/data/snapshots:/app/data/snapshots
+
+  worker:
+    build: ./backend
+    command: celery -A app.workers.celery_app worker -B --loglevel=info
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/regintel
+      REDIS_URL: redis://redis:6379/0
+      SNAPSHOT_DIR: /app/data/snapshots
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/data/snapshots:/app/data/snapshots
+
 volumes:
   pgdata:

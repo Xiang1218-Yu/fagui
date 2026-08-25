@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_use_tls: bool = True
     email_from: str = ""
+    # 首次播种 admin 的初始密码，留空则用 admin123
+    admin_initial_password: str = ""
 
 
 settings = Settings()

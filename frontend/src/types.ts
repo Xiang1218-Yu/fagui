@@ -4,6 +4,7 @@ export interface User {
   id: number
   username: string
   role: Role
+  must_change_password: boolean
   created_at: string
 }
 
