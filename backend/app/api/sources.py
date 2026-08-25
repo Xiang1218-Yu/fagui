@@ -3,10 +3,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import CrawlRun, Source
+from app.models import CrawlRun, Source, User
 from app.schemas import RunQueued, SourceCreate, SourceOut, SourceUpdate
+from app.security import get_current_user, require_roles
 
-router = APIRouter(prefix="/sources", tags=["sources"])
+router = APIRouter(prefix="/sources", tags=["sources"], dependencies=[Depends(get_current_user)])
 
 
 def _to_out(source: Source, last_run_at) -> SourceOut:
@@ -34,7 +35,7 @@ def list_sources(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=SourceOut)
-def create_source(payload: SourceCreate, db: Session = Depends(get_db)):
+def create_source(payload: SourceCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     if db.scalar(select(Source).where(Source.base_url == payload.base_url)):
         raise HTTPException(status_code=400, detail="base_url 已存在")
     source = Source(**payload.model_dump())
@@ -45,7 +46,9 @@ def create_source(payload: SourceCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{source_id}", response_model=SourceOut)
-def update_source(source_id: int, payload: SourceUpdate, db: Session = Depends(get_db)):
+def update_source(
+    source_id: int, payload: SourceUpdate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))
+):
     source = db.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="来源不存在")
@@ -63,7 +66,7 @@ def update_source(source_id: int, payload: SourceUpdate, db: Session = Depends(g
 
 
 @router.delete("/{source_id}", status_code=204)
-def delete_source(source_id: int, db: Session = Depends(get_db)):
+def delete_source(source_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     source = db.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="来源不存在")
@@ -73,7 +76,7 @@ def delete_source(source_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{source_id}/run", response_model=RunQueued)
-def run_source(source_id: int, db: Session = Depends(get_db)):
+def run_source(source_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "analyst"))):
     source = db.get(Source, source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="来源不存在")

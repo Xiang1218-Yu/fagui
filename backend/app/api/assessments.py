@@ -5,10 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Assessment, Change, Regulation
+from app.models import Assessment, Change, Regulation, User
 from app.schemas import AssessmentCreate, AssessmentOut, AssessmentUpdate
+from app.security import get_current_user, require_roles
 
-router = APIRouter(prefix="/assessments", tags=["assessments"])
+router = APIRouter(prefix="/assessments", tags=["assessments"], dependencies=[Depends(get_current_user)])
 
 
 def _to_out(assessment: Assessment, regulation_title: str) -> AssessmentOut:
@@ -47,7 +48,9 @@ def list_assessments(change_id: Optional[int] = None, db: Session = Depends(get_
 
 
 @router.post("", response_model=AssessmentOut)
-def create_assessment(payload: AssessmentCreate, db: Session = Depends(get_db)):
+def create_assessment(
+    payload: AssessmentCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "analyst"))
+):
     change = db.get(Change, payload.change_id)
     if change is None:
         raise HTTPException(status_code=404, detail="变更不存在")
@@ -59,7 +62,12 @@ def create_assessment(payload: AssessmentCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{assessment_id}", response_model=AssessmentOut)
-def update_assessment(assessment_id: int, payload: AssessmentUpdate, db: Session = Depends(get_db)):
+def update_assessment(
+    assessment_id: int,
+    payload: AssessmentUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "analyst")),
+):
     assessment = db.get(Assessment, assessment_id)
     if assessment is None:
         raise HTTPException(status_code=404, detail="研判不存在")

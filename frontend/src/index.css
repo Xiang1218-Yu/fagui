@@ -403,3 +403,115 @@ button.btn:disabled {
   border-color: #2563eb;
   color: #fff;
 }
+
+/* 登录页 */
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: #fff;
+  border: 1px solid #e4e7eb;
+  border-radius: 10px;
+  padding: 30px 32px;
+  width: 360px;
+  max-width: 92vw;
+}
+
+.login-card h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+  text-align: center;
+}
+
+.login-sub {
+  text-align: center;
+  margin: 0 0 20px;
+}
+
+.login-card .form-item {
+  margin-bottom: 14px;
+}
+
+.login-card .form-item input[type='text'],
+.login-card .form-item input[type='password'] {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 8px 0;
+}
+
+.login-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin: 12px 0 0;
+  text-align: center;
+}
+
+/* 侧边栏用户区 */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar nav {
+  flex: 1;
+}
+
+.sidebar-user {
+  padding: 14px 20px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 12px;
+}
+
+.sidebar-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.sidebar-username {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar-logout {
+  width: 100%;
+}
+
+.badge-role-admin { background: #fee2e2; color: #b91c1c; }
+.badge-role-analyst { background: #e0ecff; color: #1d4ed8; }
+.badge-role-viewer { background: #e5e7eb; color: #4b5563; }
+
+/* 附件版本与变更证据 */
+.badge-current { background: #e0ecff; color: #1d4ed8; }
+
+.mono {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.attach-meta {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.attach-meta .hash-line {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  word-break: break-all;
+}

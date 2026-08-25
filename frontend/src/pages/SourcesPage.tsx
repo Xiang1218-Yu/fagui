@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { Source, fmtDate } from '../types'
+import { Source, fmtDate, useCurrentUser } from '../types'
 
 interface FormState {
   name: string
@@ -23,6 +23,9 @@ const emptyForm: FormState = {
 }
 
 export default function SourcesPage() {
+  const user = useCurrentUser()
+  const isAdmin = user?.role === 'admin'
+  const canRun = user?.role !== 'viewer'
   const [sources, setSources] = useState<Source[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -138,9 +141,11 @@ export default function SourcesPage() {
     <div>
       <h1 className="page-title">来源管理</h1>
       <div className="toolbar">
-        <button className="btn primary" onClick={() => { resetForm(); setShowForm(true) }}>
-          新建来源
-        </button>
+        {isAdmin && (
+          <button className="btn primary" onClick={() => { resetForm(); setShowForm(true) }}>
+            新建来源
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -223,11 +228,18 @@ export default function SourcesPage() {
                   <td>{fmtDate(s.last_run_at)}</td>
                   <td>
                     <div className="btn-row">
-                      <button className="btn small" disabled={runningId === s.id} onClick={() => handleRun(s)}>
-                        {runningId === s.id ? '触发中…' : '立即采集'}
-                      </button>
-                      <button className="btn small" onClick={() => startEdit(s)}>编辑</button>
-                      <button className="btn small danger" onClick={() => handleDelete(s)}>删除</button>
+                      {canRun && (
+                        <button className="btn small" disabled={runningId === s.id} onClick={() => handleRun(s)}>
+                          {runningId === s.id ? '触发中…' : '立即采集'}
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <>
+                          <button className="btn small" onClick={() => startEdit(s)}>编辑</button>
+                          <button className="btn small danger" onClick={() => handleDelete(s)}>删除</button>
+                        </>
+                      )}
+                      {!canRun && !isAdmin && <span className="muted">—</span>}
                     </div>
                   </td>
                 </tr>

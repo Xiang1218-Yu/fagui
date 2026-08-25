@@ -1,6 +1,6 @@
 import { ChangeEvent, useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { Notification, Source, Subscription, fmtDate } from '../types'
+import { Notification, Source, Subscription, fmtDate, useCurrentUser } from '../types'
 
 interface FormState {
   name: string
@@ -21,6 +21,8 @@ const emptyForm: FormState = {
 }
 
 export default function SubscriptionsPage() {
+  const user = useCurrentUser()
+  const canEdit = user?.role !== 'viewer'
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [sources, setSources] = useState<Source[]>([])
@@ -131,9 +133,11 @@ export default function SubscriptionsPage() {
       <h1 className="page-title">订阅通知</h1>
       <div className="two-col">
         <div>
-          <div className="toolbar">
-            <button className="btn primary" onClick={() => { resetForm(); setShowForm(true) }}>新建订阅</button>
-          </div>
+          {canEdit && (
+            <div className="toolbar">
+              <button className="btn primary" onClick={() => { resetForm(); setShowForm(true) }}>新建订阅</button>
+            </div>
+          )}
 
           {showForm && (
             <div className="card">
@@ -196,7 +200,7 @@ export default function SubscriptionsPage() {
                     <th>目标地址</th>
                     <th>关键词</th>
                     <th>启用</th>
-                    <th>操作</th>
+                    {canEdit && <th>操作</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -212,12 +216,14 @@ export default function SubscriptionsPage() {
                           <span className="muted">{s.enabled ? '开' : '关'}</span>
                         </label>
                       </td>
-                      <td>
-                        <div className="btn-row">
-                          <button className="btn small" onClick={() => startEdit(s)}>编辑</button>
-                          <button className="btn small danger" onClick={() => handleDelete(s)}>删除</button>
-                        </div>
-                      </td>
+                      {canEdit && (
+                        <td>
+                          <div className="btn-row">
+                            <button className="btn small" onClick={() => startEdit(s)}>编辑</button>
+                            <button className="btn small danger" onClick={() => handleDelete(s)}>删除</button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

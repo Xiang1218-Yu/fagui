@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from collections import deque
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,9 @@ from app.config import settings
 from app.models import Attachment, Change, CrawlRun, Document, Snapshot, Source, utcnow
 from app.services import dedup, diffutil, notify
 
-ATTACH_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx"}
+logger = logging.getLogger(__name__)
+
+ATTACH_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"}
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -93,8 +96,10 @@ def _download(client: httpx.Client, url: str) -> Optional[bytes]:
 
 
 def _extract_attachment_text(path: Path, ext: str) -> Optional[str]:
-    """抽取附件文本：pdf 用 pypdf、docx 用 python-docx，失败返回 None。"""
+    """抽取附件文本：pdf 用 pypdf、docx 用 python-docx、txt 直接解码，失败返回 None。"""
     try:
+        if ext == ".txt":
+            return path.read_text(encoding="utf-8")
         if ext == ".pdf":
             from pypdf import PdfReader
 
@@ -131,8 +136,18 @@ def _get_or_create_document(session: Session, source: Source, url: str, title: s
     return doc, True
 
 
-def _process_attachments(client: httpx.Client, soup: BeautifulSoup, page_url: str, doc: Document, run: CrawlRun, session: Session):
-    """下载页面中的附件链接，返回 [(kind, attachment)]，kind 为 added/updated。"""
+def _process_attachments(
+    client: httpx.Client,
+    soup: BeautifulSoup,
+    page_url: str,
+    doc: Document,
+    run: CrawlRun,
+    session: Session,
+    host: str,
+    prefixes: list,
+    rp: Optional[robotparser.RobotFileParser],
+):
+    """下载页面中的附件链接并按版本留痕，返回 [(kind, old_attachment, new_attachment)]。"""
     updates = []
     seen = set()
     for a in soup.find_all("a", href=True):
@@ -141,6 +156,13 @@ def _process_attachments(client: httpx.Client, soup: BeautifulSoup, page_url: st
         if ext not in ATTACH_EXTS or url in seen:
             continue
         seen.add(url)
+        # 与页面相同的两道校验：来源白名单（同 host + allowed_paths 前缀）与 robots.txt
+        if not _same_host(url, host) or not _path_allowed(url, prefixes):
+            logger.info("附件超出来源白名单，跳过：%s", url)
+            continue
+        if rp is not None and not rp.can_fetch(settings.crawl_user_agent, url):
+            logger.info("robots.txt 禁止抓取附件，跳过：%s", url)
+            continue
         try:
             content = _download(client, url)
         except Exception:
@@ -148,9 +170,14 @@ def _process_attachments(client: httpx.Client, soup: BeautifulSoup, page_url: st
         if not content:
             continue
         content_hash = _sha256_bytes(content)
-        existing = session.scalar(select(Attachment).where(Attachment.document_id == doc.id, Attachment.url == url))
-        if existing is not None and existing.content_hash == content_hash:
-            continue  # 同 url 同 hash，跳过
+        latest = session.scalar(
+            select(Attachment)
+            .where(Attachment.document_id == doc.id, Attachment.url == url)
+            .order_by(Attachment.id.desc())
+            .limit(1)
+        )
+        if latest is not None and latest.content_hash == content_hash:
+            continue  # 同 url 最新版本 hash 未变，跳过
         filename = Path(urlparse(url).path).name or f"attachment{ext}"
         day_dir = _snapshot_dir()
         snapshot_path = day_dir / f"att_{content_hash}{ext}"
@@ -161,17 +188,19 @@ def _process_attachments(client: httpx.Client, soup: BeautifulSoup, page_url: st
             tp = day_dir / f"att_{content_hash}.txt"
             tp.write_text(text, encoding="utf-8")
             text_path = str(tp)
-        kind = "updated" if existing is not None else "added"
-        if existing is None:
-            existing = Attachment(document_id=doc.id, url=url, created_at=utcnow())
-            session.add(existing)
-        existing.filename = filename
-        existing.content_hash = content_hash
-        existing.snapshot_path = str(snapshot_path)
-        existing.text_path = text_path
+        attachment = Attachment(
+            document_id=doc.id,
+            url=url,
+            filename=filename,
+            content_hash=content_hash,
+            snapshot_path=str(snapshot_path),
+            text_path=text_path,
+            created_at=utcnow(),
+        )
+        session.add(attachment)
         session.flush()
         run.attachments_fetched += 1
-        updates.append((kind, existing))
+        updates.append(("updated" if latest is not None else "added", latest, attachment))
     return updates
 
 
@@ -256,7 +285,7 @@ def _crawl(source: Source, run: CrawlRun, session: Session) -> None:
                 session.flush()
                 doc.latest_hash = content_hash
 
-            att_updates = _process_attachments(client, soup, url, doc, run, session)
+            att_updates = _process_attachments(client, soup, url, doc, run, session, host, prefixes, rp)
 
             changes = []
             if created and new_snapshot is not None:
@@ -282,12 +311,14 @@ def _crawl(source: Source, run: CrawlRun, session: Session) -> None:
                             detected_at=utcnow(),
                         )
                     )
-                for kind, att in att_updates:
+                for kind, old_att, att in att_updates:
                     label = "新增" if kind == "added" else "内容更新"
                     changes.append(
                         Change(
                             document_id=doc.id,
                             change_type="attachment_updated",
+                            old_attachment_id=old_att.id if old_att else None,
+                            new_attachment_id=att.id,
                             diff_summary=f"附件《{att.filename}》{label}",
                             detected_at=utcnow(),
                         )

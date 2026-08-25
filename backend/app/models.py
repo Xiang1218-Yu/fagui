@@ -79,6 +79,8 @@ class Snapshot(Base):
 
 
 class Attachment(Base):
+    """附件版本行：同一 (document_id, url) 可存在多行，每行一次采集到的版本。"""
+
     __tablename__ = "attachments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -114,6 +116,8 @@ class Change(Base):
     change_type: Mapped[str] = mapped_column(String(30))
     old_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id"), nullable=True)
     new_snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id"), nullable=True)
+    old_attachment_id: Mapped[Optional[int]] = mapped_column(ForeignKey("attachments.id"), nullable=True)
+    new_attachment_id: Mapped[Optional[int]] = mapped_column(ForeignKey("attachments.id"), nullable=True)
     diff_summary: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="pending_review")
     detected_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -182,3 +186,27 @@ class Notification(Base):
 
     subscription: Mapped[Subscription] = relationship(back_populates="notifications")
     change: Mapped[Change] = relationship(back_populates="notifications")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20), default="viewer")  # admin / analyst / viewer
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    tokens: Mapped[list["AuthToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class AuthToken(Base):
+    __tablename__ = "auth_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="tokens")

@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import CrawlRun, Source
 from app.schemas import RunOut
+from app.security import get_current_user
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs"], dependencies=[Depends(get_current_user)])
 
 
 def _to_out(run: CrawlRun, source_name: str) -> RunOut:

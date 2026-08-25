@@ -1,10 +1,39 @@
+import smtplib
+from email.message import EmailMessage
 from typing import Optional
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import Change, Document, Notification, Regulation, Source, Subscription, utcnow
+
+
+def _send_email(target: str, change: Change, document: Document, regulation: Optional[Regulation]) -> None:
+    """通过 SMTP 发送变更通知邮件；未配置 smtp_host 时抛出 RuntimeError。"""
+    if not settings.smtp_host:
+        raise RuntimeError("SMTP 未配置")
+    title = regulation.canonical_title if regulation else (document.title or document.url)
+    body = "\n".join(
+        [
+            f"法规标题：{title}",
+            f"变更类型：{change.change_type}",
+            f"检出时间：{change.detected_at.isoformat() if change.detected_at else ''}",
+            f"差异摘要：{change.diff_summary}",
+            f"文档 URL：{document.url}",
+        ]
+    )
+    msg = EmailMessage()
+    msg["Subject"] = f"【法规变更】{title}"
+    msg["From"] = settings.email_from or settings.smtp_user
+    msg["To"] = target
+    msg.set_content(body)
+    smtp_cls = smtplib.SMTP_SSL if settings.smtp_use_tls else smtplib.SMTP
+    with smtp_cls(settings.smtp_host, settings.smtp_port, timeout=15) as smtp:
+        if settings.smtp_user:
+            smtp.login(settings.smtp_user, settings.smtp_password)
+        smtp.send_message(msg)
 
 
 def _matches(sub: Subscription, document: Document, regulation: Optional[Regulation], source: Source) -> bool:
@@ -54,7 +83,8 @@ def dispatch_for_change(
                 resp = httpx.post(sub.target, json=payload, timeout=10)
                 if resp.status_code >= 400:
                     raise RuntimeError(f"HTTP {resp.status_code}")
-            # email 渠道仅模拟，视为成功发送
+            elif sub.channel == "email":
+                _send_email(sub.target, change, document, regulation)
             notif.status = "sent"
             notif.error = None
             notif.sent_at = utcnow()

@@ -1,3 +1,27 @@
+export type Role = 'admin' | 'analyst' | 'viewer'
+
+export interface User {
+  id: number
+  username: string
+  role: Role
+  created_at: string
+}
+
+export const roleLabel: Record<Role, string> = {
+  admin: '管理员',
+  analyst: '分析师',
+  viewer: '只读',
+}
+
+export function useCurrentUser(): User | null {
+  try {
+    const raw = localStorage.getItem('regintel_user')
+    return raw ? (JSON.parse(raw) as User) : null
+  } catch {
+    return null
+  }
+}
+
 export interface Source {
   id: number
   name: string
@@ -44,6 +68,22 @@ export interface Attachment {
   url: string
   filename: string
   content_hash: string
+  created_at: string
+}
+
+export interface AttachmentVersion {
+  id: number
+  url: string
+  filename: string
+  content_hash: string
+  created_at: string
+  text: string | null
+}
+
+export interface AttachmentDiff {
+  old: AttachmentVersion | null
+  new: AttachmentVersion | null
+  unified_diff: string | null
 }
 
 export interface Review {
@@ -58,6 +98,7 @@ export interface ChangeDetail extends ChangeItem {
   new_text: string | null
   unified_diff: string | null
   attachments: Attachment[]
+  attachment_diff: AttachmentDiff | null
   review: Review | null
 }
 

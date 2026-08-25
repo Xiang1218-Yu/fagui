@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import { ChangeItem, fmtDate } from '../types'
+import { ChangeItem, fmtDate, useCurrentUser } from '../types'
 import { changeStatusLabel, changeTypeLabel } from './ChangesPage'
 
 type View = 'pending' | 'reviewed'
@@ -12,6 +12,8 @@ interface ReviewTarget {
 }
 
 export default function ReviewPage() {
+  const user = useCurrentUser()
+  const canReview = user?.role !== 'viewer'
   const [view, setView] = useState<View>('pending')
   const [pending, setPending] = useState<ChangeItem[]>([])
   const [reviewed, setReviewed] = useState<ChangeItem[]>([])
@@ -114,7 +116,7 @@ export default function ReviewPage() {
                 <Link to={`/changes/${c.id}`}>
                   <button className="btn small">查看详情</button>
                 </Link>
-                {view === 'pending' && (
+                {view === 'pending' && canReview && (
                   <>
                     <button className="btn small primary" onClick={() => openModal(c, 'confirmed')}>确认</button>
                     <button className="btn small danger" onClick={() => openModal(c, 'dismissed')}>驳回</button>

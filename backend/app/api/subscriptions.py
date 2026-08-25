@@ -3,10 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Subscription
+from app.models import Subscription, User
 from app.schemas import SubscriptionCreate, SubscriptionOut, SubscriptionUpdate
+from app.security import get_current_user, require_roles
 
-router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
+router = APIRouter(prefix="/subscriptions", tags=["subscriptions"], dependencies=[Depends(get_current_user)])
 
 
 def _to_out(sub: Subscription) -> SubscriptionOut:
@@ -28,7 +29,9 @@ def list_subscriptions(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=SubscriptionOut)
-def create_subscription(payload: SubscriptionCreate, db: Session = Depends(get_db)):
+def create_subscription(
+    payload: SubscriptionCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "analyst"))
+):
     sub = Subscription(**payload.model_dump())
     db.add(sub)
     db.commit()
@@ -37,7 +40,12 @@ def create_subscription(payload: SubscriptionCreate, db: Session = Depends(get_d
 
 
 @router.patch("/{subscription_id}", response_model=SubscriptionOut)
-def update_subscription(subscription_id: int, payload: SubscriptionUpdate, db: Session = Depends(get_db)):
+def update_subscription(
+    subscription_id: int,
+    payload: SubscriptionUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "analyst")),
+):
     sub = db.get(Subscription, subscription_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="订阅不存在")
@@ -49,7 +57,9 @@ def update_subscription(subscription_id: int, payload: SubscriptionUpdate, db: S
 
 
 @router.delete("/{subscription_id}", status_code=204)
-def delete_subscription(subscription_id: int, db: Session = Depends(get_db)):
+def delete_subscription(
+    subscription_id: int, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "analyst"))
+):
     sub = db.get(Subscription, subscription_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="订阅不存在")

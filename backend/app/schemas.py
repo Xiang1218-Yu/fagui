@@ -75,6 +75,22 @@ class AttachmentOut(BaseModel):
     url: str
     filename: str
     content_hash: str
+    created_at: datetime
+
+
+class AttachmentVersion(BaseModel):
+    id: int
+    url: str
+    filename: str
+    content_hash: str
+    created_at: datetime
+    text: Optional[str]
+
+
+class AttachmentDiff(BaseModel):
+    old: Optional["AttachmentVersion"]
+    new: Optional["AttachmentVersion"]
+    unified_diff: Optional[str]
 
 
 class ReviewOut(BaseModel):
@@ -89,6 +105,7 @@ class ChangeDetail(ChangeListItem):
     new_text: Optional[str]
     unified_diff: Optional[str]
     attachments: list[AttachmentOut]
+    attachment_diff: Optional[AttachmentDiff]
     review: Optional[ReviewOut]
 
 
@@ -170,6 +187,33 @@ class SubscriptionOut(BaseModel):
     source_ids: list[int]
     enabled: bool
     created_at: datetime
+
+
+# ---------- Auth ----------
+Role = Literal["admin", "analyst", "viewer"]
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    username: str
+    role: str
+    created_at: datetime
+
+
+class TokenResponse(BaseModel):
+    token: str
+    user: UserOut
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: Role
 
 
 # ---------- Notification ----------

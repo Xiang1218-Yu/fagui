@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Change, Document, Regulation, Source
 from app.schemas import ChangeListItem, RegulationDetail, RegulationOut
+from app.security import get_current_user
 
-router = APIRouter(prefix="/regulations", tags=["regulations"])
+router = APIRouter(prefix="/regulations", tags=["regulations"], dependencies=[Depends(get_current_user)])
 
 
 def _agg_map(db: Session):

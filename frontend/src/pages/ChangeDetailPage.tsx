@@ -1,9 +1,39 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import { Assessment, ChangeDetail, fmtDate } from '../types'
+import { Assessment, AttachmentVersion, ChangeDetail, fmtDate } from '../types'
 import { changeStatusLabel, changeTypeLabel } from './ChangesPage'
 import { impactLevelLabel } from './ImpactPage'
+
+function DiffBox({ diff }: { diff: string }) {
+  return (
+    <div className="diff-box">
+      {diff.split('\n').map((line, i) => {
+        let cls = 'diff-line'
+        if (line.startsWith('+') && !line.startsWith('+++')) cls += ' diff-add'
+        else if (line.startsWith('-') && !line.startsWith('---')) cls += ' diff-del'
+        else if (line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---')) cls += ' diff-meta'
+        return <span key={i} className={cls}>{line || ' '}</span>
+      })}
+    </div>
+  )
+}
+
+function VersionPane({ version, emptyText }: { version: AttachmentVersion | null; emptyText: string }) {
+  if (!version) return <div className="pane">{emptyText}</div>
+  return (
+    <div className="pane">
+      <div className="attach-meta">
+        <div>文件名：{version.filename}</div>
+        <div>版本时间：{fmtDate(version.created_at)}</div>
+        <div className="hash-line">内容哈希：{version.content_hash}</div>
+        <div className="text-clip">
+          下载：<a href={version.url} target="_blank" rel="noreferrer">{version.url}</a>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function ChangeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -28,8 +58,6 @@ export default function ChangeDetailPage() {
 
   if (loading) return <p className="muted">加载中…</p>
   if (!detail) return <p className="muted">未找到该变更。<Link to="/changes">返回列表</Link></p>
-
-  const diffLines = detail.unified_diff ? detail.unified_diff.split('\n') : []
 
   return (
     <div>
@@ -71,21 +99,40 @@ export default function ChangeDetailPage() {
       </div>
 
       <h2 className="section-title">Unified Diff</h2>
-      {diffLines.length > 0 ? (
-        <div className="diff-box">
-          {diffLines.map((line, i) => {
-            let cls = 'diff-line'
-            if (line.startsWith('+') && !line.startsWith('+++')) cls += ' diff-add'
-            else if (line.startsWith('-') && !line.startsWith('---')) cls += ' diff-del'
-            else if (line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---')) cls += ' diff-meta'
-            return <span key={i} className={cls}>{line || ' '}</span>
-          })}
-        </div>
+      {detail.unified_diff ? (
+        <DiffBox diff={detail.unified_diff} />
       ) : (
         <p className="muted">暂无 diff 内容。</p>
       )}
 
-      <h2 className="section-title">附件列表</h2>
+      {detail.change_type === 'attachment_updated' && detail.attachment_diff && (
+        <>
+          <h2 className="section-title">附件变更证据</h2>
+          <div className="card">
+            <div className="text-compare">
+              <div>
+                <div className="pane-title">旧版本</div>
+                <VersionPane version={detail.attachment_diff.old} emptyText="（首个版本）" />
+              </div>
+              <div>
+                <div className="pane-title">新版本</div>
+                <VersionPane version={detail.attachment_diff.new} emptyText="（无新版本）" />
+              </div>
+            </div>
+            {detail.attachment_diff.unified_diff ? (
+              <div style={{ marginTop: 12 }}>
+                <DiffBox diff={detail.attachment_diff.unified_diff} />
+              </div>
+            ) : (
+              <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                该附件类型不支持文本抽取，以哈希作为变更证据
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      <h2 className="section-title">附件版本</h2>
       {detail.attachments.length === 0 ? (
         <p className="muted">无附件。</p>
       ) : (
@@ -94,16 +141,27 @@ export default function ChangeDetailPage() {
             <thead>
               <tr>
                 <th>文件名</th>
-                <th>URL</th>
+                <th>版本时间</th>
                 <th>内容哈希</th>
+                <th>下载链接</th>
               </tr>
             </thead>
             <tbody>
-              {detail.attachments.map((a) => (
+              {detail.attachments.map((a, idx) => (
                 <tr key={a.id}>
-                  <td>{a.filename}</td>
-                  <td className="text-clip"><a href={a.url} target="_blank" rel="noreferrer">{a.url}</a></td>
-                  <td className="text-clip" title={a.content_hash}>{a.content_hash}</td>
+                  <td>
+                    {a.filename}
+                    {idx === 0 && <span className="badge badge-current" style={{ marginLeft: 6 }}>当前</span>}
+                  </td>
+                  <td>{fmtDate(a.created_at)}</td>
+                  <td className="text-clip" title={a.content_hash}>
+                    <span className="mono">
+                      {a.content_hash.length > 12 ? `${a.content_hash.slice(0, 12)}…` : a.content_hash}
+                    </span>
+                  </td>
+                  <td className="text-clip">
+                    <a href={a.url} target="_blank" rel="noreferrer" title={a.url}>下载</a>
+                  </td>
                 </tr>
               ))}
             </tbody>

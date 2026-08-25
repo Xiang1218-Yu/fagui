@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Change, Notification, Regulation, Subscription
 from app.schemas import NotificationOut
+from app.security import get_current_user
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(prefix="/notifications", tags=["notifications"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("", response_model=list[NotificationOut])

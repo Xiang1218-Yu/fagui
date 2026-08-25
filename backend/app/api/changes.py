@@ -6,11 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Attachment, Change, Document, Regulation, Review, Snapshot, Source, utcnow
-from app.schemas import AttachmentOut, ChangeDetail, ChangeListItem, ReviewCreate, ReviewOut
+from app.models import Attachment, Change, Document, Regulation, Review, Snapshot, Source, User, utcnow
+from app.schemas import AttachmentDiff, AttachmentOut, AttachmentVersion, ChangeDetail, ChangeListItem, ReviewCreate, ReviewOut
+from app.security import get_current_user, require_roles
 from app.services import diffutil
 
-router = APIRouter(prefix="/changes", tags=["changes"])
+router = APIRouter(prefix="/changes", tags=["changes"], dependencies=[Depends(get_current_user)])
 
 
 def _to_item(change: Change, regulation: Regulation, document: Document, source: Source) -> ChangeListItem:
@@ -66,6 +67,29 @@ def list_changes(
     return [_to_item(*row) for row in db.execute(stmt).all()]
 
 
+def _attachment_version(db: Session, attachment_id: Optional[int]) -> Optional[AttachmentVersion]:
+    """按附件版本行构造 AttachmentVersion，text 从该版本 text_path 读取。"""
+    if attachment_id is None:
+        return None
+    attachment = db.get(Attachment, attachment_id)
+    if attachment is None:
+        return None
+    text = None
+    if attachment.text_path:
+        try:
+            text = Path(attachment.text_path).read_text(encoding="utf-8")
+        except OSError:
+            text = None
+    return AttachmentVersion(
+        id=attachment.id,
+        url=attachment.url,
+        filename=attachment.filename,
+        content_hash=attachment.content_hash,
+        created_at=attachment.created_at,
+        text=text,
+    )
+
+
 @router.get("/{change_id}", response_model=ChangeDetail)
 def get_change(change_id: int, db: Session = Depends(get_db)):
     row = db.execute(_base_stmt().where(Change.id == change_id)).first()
@@ -76,8 +100,23 @@ def get_change(change_id: int, db: Session = Depends(get_db)):
     new_text = _read_snapshot_text(db, change.new_snapshot_id)
     unified = diffutil.unified_diff_text(old_text, new_text, max_lines=400)
     attachments = db.scalars(
-        select(Attachment).where(Attachment.document_id == change.document_id).order_by(Attachment.id)
+        select(Attachment)
+        .where(Attachment.document_id == change.document_id)
+        .order_by(Attachment.created_at.desc(), Attachment.id.desc())
     ).all()
+    attachment_diff = None
+    if change.old_attachment_id is not None or change.new_attachment_id is not None:
+        old_version = _attachment_version(db, change.old_attachment_id)
+        new_version = _attachment_version(db, change.new_attachment_id)
+        attachment_diff = AttachmentDiff(
+            old=old_version,
+            new=new_version,
+            unified_diff=diffutil.unified_diff_text(
+                old_version.text if old_version else None,
+                new_version.text if new_version else None,
+                max_lines=400,
+            ),
+        )
     review = db.scalar(
         select(Review).where(Review.change_id == change.id).order_by(Review.id.desc()).limit(1)
     )
@@ -88,9 +127,12 @@ def get_change(change_id: int, db: Session = Depends(get_db)):
         new_text=new_text,
         unified_diff=unified,
         attachments=[
-            AttachmentOut(id=a.id, url=a.url, filename=a.filename, content_hash=a.content_hash)
+            AttachmentOut(
+                id=a.id, url=a.url, filename=a.filename, content_hash=a.content_hash, created_at=a.created_at
+            )
             for a in attachments
         ],
+        attachment_diff=attachment_diff,
         review=ReviewOut(
             reviewer=review.reviewer, decision=review.decision, comment=review.comment, decided_at=review.decided_at
         )
@@ -100,7 +142,12 @@ def get_change(change_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{change_id}/review", response_model=ChangeListItem)
-def review_change(change_id: int, payload: ReviewCreate, db: Session = Depends(get_db)):
+def review_change(
+    change_id: int,
+    payload: ReviewCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "analyst")),
+):
     change = db.get(Change, change_id)
     if change is None:
         raise HTTPException(status_code=404, detail="变更不存在")

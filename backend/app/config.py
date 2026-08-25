@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     snapshot_dir: str = str(_BACKEND_DIR / "data" / "snapshots")
     crawl_user_agent: str = "RegIntelBot/1.0 (+https://example.org/regintel)"
     max_attachment_bytes: int = 20 * 1024 * 1024
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    email_from: str = ""
 
 
 settings = Settings()

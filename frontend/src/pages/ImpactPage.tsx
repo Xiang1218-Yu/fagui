@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { Assessment, ChangeItem, ImpactLevel, fmtDate } from '../types'
+import { Assessment, ChangeItem, ImpactLevel, fmtDate, useCurrentUser } from '../types'
 import { changeTypeLabel } from './ChangesPage'
 
 export const impactLevelLabel: Record<ImpactLevel, string> = {
@@ -18,6 +18,8 @@ interface EditState {
 }
 
 export default function ImpactPage() {
+  const user = useCurrentUser()
+  const canEdit = user?.role !== 'viewer'
   const [changes, setChanges] = useState<ChangeItem[]>([])
   const [assessments, setAssessments] = useState<Assessment[]>([])
   const [selectedChangeId, setSelectedChangeId] = useState<string>('')
@@ -123,6 +125,7 @@ export default function ImpactPage() {
     <div>
       <h1 className="page-title">影响研判</h1>
 
+      {canEdit && (
       <div className="card">
         <h2 className="section-title" style={{ marginTop: 0 }}>新建研判</h2>
         <div className="form-grid">
@@ -166,6 +169,7 @@ export default function ImpactPage() {
           {submitting ? '提交中…' : '提交研判'}
         </button>
       </div>
+      )}
 
       <h2 className="section-title">已有研判</h2>
       <div className="card" style={{ padding: 0 }}>
@@ -183,7 +187,7 @@ export default function ImpactPage() {
                 <th>分析摘要</th>
                 <th>填写人</th>
                 <th>时间</th>
-                <th>操作</th>
+                {canEdit && <th>操作</th>}
               </tr>
             </thead>
             <tbody>
@@ -224,9 +228,11 @@ export default function ImpactPage() {
                     <td className="text-clip" title={a.analysis}>{a.analysis}</td>
                     <td>{a.created_by}</td>
                     <td>{fmtDate(a.created_at)}</td>
-                    <td>
-                      <button className="btn small" onClick={() => startEdit(a)}>编辑</button>
-                    </td>
+                    {canEdit && (
+                      <td>
+                        <button className="btn small" onClick={() => startEdit(a)}>编辑</button>
+                      </td>
+                    )}
                   </tr>
                 ),
               )}
