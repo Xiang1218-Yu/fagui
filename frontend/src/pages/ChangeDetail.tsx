@@ -4,12 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Button, Spin, Tag, Descriptions, Tabs, Typography, Space,
   Modal, Form, Input, Select, message, Divider, Statistic, Row, Col,
+  List, Empty, Alert,
 } from 'antd';
 import {
-  ArrowLeftOutlined, CheckOutlined, CloseOutlined,
+  ArrowLeftOutlined, CheckOutlined,
   AlertOutlined, AuditOutlined,
+  PaperClipOutlined, FileAddOutlined, DeleteOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { changesApi, reviewsApi, impactApi } from '../api';
+import type { Change, Review } from '../types';
 import dayjs from 'dayjs';
 
 const { Text, Paragraph } = Typography;
@@ -24,6 +27,21 @@ const changeTypeLabels: Record<string, string> = {
   repeal: '废止',
 };
 
+const severityLabels: Record<string, { text: string; color: string }> = {
+  critical: { text: '严重', color: '#cf1322' },
+  high: { text: '高', color: '#fa541c' },
+  medium: { text: '中', color: '#faad14' },
+  low: { text: '低', color: '#52c41a' },
+};
+
+const reviewStatusLabels: Record<string, { text: string; color: string }> = {
+  pending: { text: '待复核', color: 'orange' },
+  in_review: { text: '复核中', color: 'blue' },
+  confirmed: { text: '已确认', color: 'green' },
+  dismissed: { text: '已忽略', color: 'default' },
+  escalated: { text: '已升级', color: 'red' },
+};
+
 export default function ChangeDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -33,7 +51,7 @@ export default function ChangeDetail() {
   const [reviewForm] = Form.useForm();
   const [impactForm] = Form.useForm();
 
-  const { data: change, isLoading } = useQuery({
+  const { data: change, isLoading } = useQuery<Change>({
     queryKey: ['change', id],
     queryFn: () => changesApi.get(id!),
     enabled: !!id,
@@ -42,7 +60,14 @@ export default function ChangeDetail() {
   const { data: diffData, isLoading: diffLoading } = useQuery({
     queryKey: ['change-diff', id],
     queryFn: () => changesApi.getDiff(id!),
+    enabled: !!id && change?.change_type === 'content_update',
+  });
+
+  const { data: reviewData } = useQuery({
+    queryKey: ['review-by-change', id],
+    queryFn: () => reviewsApi.getByChangeId(id!),
     enabled: !!id,
+    retry: false,
   });
 
   const markReviewedMutation = useMutation({
@@ -50,18 +75,35 @@ export default function ChangeDetail() {
     onSuccess: () => {
       message.success('已标记为已复核');
       queryClient.invalidateQueries({ queryKey: ['change', id] });
+      queryClient.invalidateQueries({ queryKey: ['review-by-change', id] });
     },
   });
 
   const submitReviewMutation = useMutation({
-    mutationFn: (data: { status: string; decision: string; notes: string; tags: string[] }) =>
-      reviewsApi.update(id!, data),
+    mutationFn: (data: { reviewId: string; status: Review['status']; decision: string; notes: string; tags: string[] }) => {
+      const { reviewId, ...payload } = data;
+      return reviewsApi.update(reviewId, payload);
+    },
     onSuccess: () => {
-      message.success('复核已提交');
+      message.success('复核结论已提交');
       setReviewModalVisible(false);
       reviewForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['change', id] });
+      queryClient.invalidateQueries({ queryKey: ['review-by-change', id] });
       queryClient.invalidateQueries({ queryKey: ['reviews'] });
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      message.error(msg || '复核提交失败');
+    },
+  });
+
+  const claimReviewMutation = useMutation({
+    mutationFn: (reviewId: string) =>
+      reviewsApi.claim(reviewId, 'analyst@compliance', '合规分析师'),
+    onSuccess: () => {
+      message.success('已领取复核任务');
+      queryClient.invalidateQueries({ queryKey: ['review-by-change', id] });
     },
   });
 
@@ -79,10 +121,19 @@ export default function ChangeDetail() {
     return <div className="page-container"><Spin size="large" /></div>;
   }
 
+  const reviewId = change.review_id || reviewData?.id;
+  const reviewStatus = reviewData?.status || change.review_status;
+  const isReviewed = change.is_reviewed || reviewStatus === 'confirmed' || reviewStatus === 'dismissed';
+
   const handleReviewSubmit = () => {
+    if (!reviewId) {
+      message.error('未找到关联的复核记录，无法提交');
+      return;
+    }
     reviewForm.validateFields().then(values => {
       submitReviewMutation.mutate({
-        status: values.status,
+        reviewId,
+        status: values.status as Review['status'],
         decision: values.decision,
         notes: values.notes,
         tags: values.tags || [],
@@ -102,8 +153,19 @@ export default function ChangeDetail() {
     });
   };
 
+  const attachmentChanges = (change.attachment_changes as {
+    added?: Array<{ filename: string; url: string }>;
+    removed?: Array<{ filename: string; url: string }>;
+    modified?: Array<{ filename: string; url: string }>;
+  }) || {};
+
+  const hasAttachmentChanges =
+    (attachmentChanges.added?.length || 0) +
+    (attachmentChanges.removed?.length || 0) +
+    (attachmentChanges.modified?.length || 0) > 0;
+
   const tabItems = [
-    {
+    ...(change.change_type === 'content_update' ? [{
       key: 'diff',
       label: '内容差异对比',
       children: (
@@ -113,18 +175,10 @@ export default function ChangeDetail() {
           ) : diffData ? (
             <div>
               <Row gutter={16} style={{ marginBottom: 16 }}>
-                <Col span={6}>
-                  <Statistic title="变更行数" value={diffData.stats.lines_changed} />
-                </Col>
-                <Col span={6}>
-                  <Statistic title="新增行" value={diffData.stats.lines_added} valueStyle={{ color: '#52c41a' }} />
-                </Col>
-                <Col span={6}>
-                  <Statistic title="删除行" value={diffData.stats.lines_removed} valueStyle={{ color: '#ff4d4f' }} />
-                </Col>
-                <Col span={6}>
-                  <Statistic title="变更比例" value={`${(diffData.stats.change_ratio * 100).toFixed(1)}%`} />
-                </Col>
+                <Col span={6}><Statistic title="变更行数" value={diffData.stats.lines_changed} /></Col>
+                <Col span={6}><Statistic title="新增行" value={diffData.stats.lines_added} valueStyle={{ color: '#52c41a' }} /></Col>
+                <Col span={6}><Statistic title="删除行" value={diffData.stats.lines_removed} valueStyle={{ color: '#ff4d4f' }} /></Col>
+                <Col span={6}><Statistic title="变更比例" value={`${(diffData.stats.change_ratio * 100).toFixed(1)}%`} /></Col>
               </Row>
               <div className="diff-viewer" dangerouslySetInnerHTML={{ __html: diffData.diff_html }} />
             </div>
@@ -133,13 +187,13 @@ export default function ChangeDetail() {
           )}
         </div>
       ),
-    },
-    {
+    }] : []),
+    ...(change.change_type === 'content_update' && diffData?.sections?.length ? [{
       key: 'sections',
       label: '变更段落',
       children: (
         <div>
-          {diffData?.sections?.map((section, idx) => (
+          {diffData.sections.map((section: { header: string; before_context: string; after_context: string }, idx: number) => (
             <Card key={idx} size="small" style={{ marginBottom: 12 }} title={section.header}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div>
@@ -159,8 +213,78 @@ export default function ChangeDetail() {
           ))}
         </div>
       ),
-    },
+    }] : []),
+    ...(change.change_type === 'attachment_update' ? [{
+      key: 'attachments',
+      label: <span><PaperClipOutlined /> 附件变更明细</span>,
+      children: hasAttachmentChanges ? (
+        <div>
+          {attachmentChanges.added && attachmentChanges.added.length > 0 && (
+            <Card size="small" title={<span><FileAddOutlined style={{ color: '#52c41a' }} /> 新增附件 ({attachmentChanges.added.length})</span>} style={{ marginBottom: 12 }}>
+              <List
+                size="small"
+                dataSource={attachmentChanges.added}
+                renderItem={item => (
+                  <List.Item>
+                    <a href={item.url} target="_blank" rel="noreferrer">{item.filename}</a>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
+          {attachmentChanges.removed && attachmentChanges.removed.length > 0 && (
+            <Card size="small" title={<span><DeleteOutlined style={{ color: '#ff4d4f' }} /> 删除附件 ({attachmentChanges.removed.length})</span>} style={{ marginBottom: 12 }}>
+              <List
+                size="small"
+                dataSource={attachmentChanges.removed}
+                renderItem={item => (
+                  <List.Item>
+                    <Text delete>{item.filename}</Text>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
+          {attachmentChanges.modified && attachmentChanges.modified.length > 0 && (
+            <Card size="small" title={<span><EditOutlined style={{ color: '#faad14' }} /> 修改附件 ({attachmentChanges.modified.length})</span>}>
+              <List
+                size="small"
+                dataSource={attachmentChanges.modified}
+                renderItem={item => (
+                  <List.Item>
+                    <a href={item.url} target="_blank" rel="noreferrer">{item.filename}</a>
+                  </List.Item>
+                )}
+              />
+            </Card>
+          )}
+        </div>
+      ) : (
+        <Empty description="无附件变更明细" />
+      ),
+    }] : []),
+    ...(change.change_type === 'new' ? [{
+      key: 'new-info',
+      label: '收录信息',
+      children: (
+        <Alert
+          type="info"
+          showIcon
+          message="这是首次收录的法规"
+          description={
+            <div>
+              <Paragraph>{change.summary}</Paragraph>
+              <Paragraph>系统已自动创建快照并纳入法规库，可前往法规详情页查看完整内容和附件。</Paragraph>
+              <Button type="link" onClick={() => navigate(`/regulations`)}>查看法规库</Button>
+            </div>
+          }
+        />
+      ),
+    }] : []),
   ];
+
+  const sevCfg = severityLabels[change.severity] || severityLabels.medium;
+  const revCfg = reviewStatus ? (reviewStatusLabels[reviewStatus] || { text: reviewStatus, color: 'default' }) : null;
 
   return (
     <div className="page-container">
@@ -173,38 +297,59 @@ export default function ChangeDetail() {
           <Descriptions.Item label="法规">{change.regulation_title || '-'}</Descriptions.Item>
           <Descriptions.Item label="来源">{change.source_name || '-'}</Descriptions.Item>
           <Descriptions.Item label="变更类型">
-            <Tag>{changeTypeLabels[change.change_type] || change.change_type}</Tag>
+            <Tag color="blue">{changeTypeLabels[change.change_type] || change.change_type}</Tag>
           </Descriptions.Item>
           <Descriptions.Item label="严重程度">
-            <span className={`severity-${change.severity}`}>
-              {change.severity === 'critical' ? '严重' : change.severity === 'high' ? '高' : change.severity === 'medium' ? '中' : '低'}
-            </span>
+            <span style={{ color: sevCfg.color, fontWeight: 600 }}>{sevCfg.text}</span>
           </Descriptions.Item>
           <Descriptions.Item label="复核状态">
-            <Tag color={change.is_reviewed ? 'green' : 'orange'}>
-              {change.is_reviewed ? '已复核' : '待复核'}
-            </Tag>
+            {revCfg ? <Tag color={revCfg.color}>{revCfg.text}</Tag> : <Tag>无复核记录</Tag>}
+          </Descriptions.Item>
+          <Descriptions.Item label="复核 ID">
+            {reviewId ? <Text code copyable>{reviewId.slice(0, 8)}...</Text> : <Text type="secondary">未生成</Text>}
           </Descriptions.Item>
           <Descriptions.Item label="检测时间">
             {dayjs(change.created_at).format('YYYY-MM-DD HH:mm:ss')}
           </Descriptions.Item>
+          {reviewData?.reviewer_name && (
+            <Descriptions.Item label="复核人">{reviewData.reviewer_name}</Descriptions.Item>
+          )}
           {change.summary && (
             <Descriptions.Item label="变更摘要" span={2}>
               <Paragraph>{change.summary}</Paragraph>
+            </Descriptions.Item>
+          )}
+          {reviewData?.decision && (
+            <Descriptions.Item label="复核决定" span={2}>
+              <Paragraph>{reviewData.decision}</Paragraph>
+            </Descriptions.Item>
+          )}
+          {reviewData?.notes && (
+            <Descriptions.Item label="备注" span={2}>
+              <Paragraph>{reviewData.notes}</Paragraph>
             </Descriptions.Item>
           )}
         </Descriptions>
 
         <Divider />
 
-        <Space>
-          {!change.is_reviewed && (
+        <Space wrap>
+          {reviewId && reviewStatus === 'pending' && (
+            <Button
+              icon={<AuditOutlined />}
+              onClick={() => claimReviewMutation.mutate(reviewId)}
+              loading={claimReviewMutation.isPending}
+            >
+              领取复核
+            </Button>
+          )}
+          {reviewId && !isReviewed && (
             <Button
               type="primary"
               icon={<AuditOutlined />}
               onClick={() => setReviewModalVisible(true)}
             >
-              提交复核
+              {reviewStatus === 'in_review' ? '提交复核结论' : '处理复核'}
             </Button>
           )}
           <Button
@@ -216,7 +361,7 @@ export default function ChangeDetail() {
           <Button
             icon={<CheckOutlined />}
             onClick={() => markReviewedMutation.mutate(id!)}
-            disabled={change.is_reviewed}
+            disabled={isReviewed}
           >
             标记已复核
           </Button>
@@ -234,12 +379,15 @@ export default function ChangeDetail() {
         onCancel={() => setReviewModalVisible(false)}
         confirmLoading={submitReviewMutation.isPending}
       >
+        {!reviewId && (
+          <Alert type="warning" message="未找到关联的复核记录" style={{ marginBottom: 16 }} showIcon />
+        )}
         <Form form={reviewForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="status" label="复核结论" rules={[{ required: true }]} initialValue="confirmed">
             <Select>
-              <Option value="confirmed">确认变更</Option>
+              <Option value="confirmed">确认变更（需要跟进）</Option>
               <Option value="dismissed">忽略（无实质变化）</Option>
-              <Option value="escalated">升级处理</Option>
+              <Option value="escalated">升级处理（重大变化）</Option>
             </Select>
           </Form.Item>
           <Form.Item name="decision" label="复核决定说明">

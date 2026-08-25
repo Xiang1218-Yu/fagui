@@ -143,12 +143,13 @@ class ChangeResponse(BaseModel):
     summary: Optional[str] = None
     diff_stats: dict[str, Any] = {}
     changed_fields: list[Any] = []
-    attachment_changes: list[Any] = []
+    attachment_changes: Any = []
     is_reviewed: bool
     created_at: datetime
     regulation_title: Optional[str] = None
     source_name: Optional[str] = None
     review_status: Optional[str] = None
+    review_id: Optional[str] = None
 
     class Config:
         from_attributes = True

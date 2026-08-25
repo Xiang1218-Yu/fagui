@@ -73,10 +73,16 @@ export interface Change {
   summary?: string;
   diff_stats: Record<string, number>;
   changed_fields: unknown[];
-  attachment_changes: unknown[];
+  attachment_changes: {
+    added?: Array<{ filename: string; url: string; file_hash?: string }>;
+    removed?: Array<{ filename: string; url: string }>;
+    modified?: Array<{ filename: string; url: string }>;
+  } | unknown[];
   is_reviewed: boolean;
   review_status?: string;
+  review_id?: string;
   created_at: string;
+  diff_content?: Record<string, unknown>;
 }
 
 export interface Review {

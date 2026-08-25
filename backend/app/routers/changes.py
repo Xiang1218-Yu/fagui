@@ -2,16 +2,31 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, or_
 from typing import Optional
+from datetime import datetime
 
 from app.database import get_db
 from app.models import Change, Regulation, Snapshot, Review, Source, ReviewStatus
 from app.schemas import (
-    ChangeResponse, ChangeDetailResponse, PaginatedResponse, DiffResult
+    ChangeResponse, ChangeDetailResponse, PaginatedResponse
 )
 from app.services.differ import DiffEngine
 from app.services.storage import SnapshotStorage
 
 router = APIRouter(prefix="/api/changes", tags=["变更对比"])
+
+
+def _populate_change_review_info(db: Session, change: Change) -> dict:
+    item = ChangeResponse.model_validate(change).model_dump()
+    item["regulation_title"] = change.regulation.title if change.regulation else None
+    item["source_name"] = (
+        change.regulation.source.name
+        if change.regulation and change.regulation.source
+        else None
+    )
+    review = db.query(Review).filter(Review.change_id == change.id).first()
+    item["review_status"] = review.status.value if review else None
+    item["review_id"] = review.id if review else None
+    return item
 
 
 @router.get("", response_model=PaginatedResponse)
@@ -52,14 +67,7 @@ def list_changes(
         .all()
     )
 
-    items = []
-    for change in changes:
-        item = ChangeResponse.model_validate(change).model_dump()
-        item["regulation_title"] = change.regulation.title if change.regulation else None
-        item["source_name"] = change.regulation.source.name if change.regulation and change.regulation.source else None
-        review = db.query(Review).filter(Review.change_id == change.id).first()
-        item["review_status"] = review.status.value if review else None
-        items.append(item)
+    items = [_populate_change_review_info(db, c) for c in changes]
 
     return PaginatedResponse(
         items=items,
@@ -78,7 +86,15 @@ def get_change(change_id: str, db: Session = Depends(get_db)):
 
     result = ChangeDetailResponse.model_validate(change).model_dump()
     result["regulation_title"] = change.regulation.title if change.regulation else None
-    result["source_name"] = change.regulation.source.name if change.regulation and change.regulation.source else None
+    result["source_name"] = (
+        change.regulation.source.name
+        if change.regulation and change.regulation.source
+        else None
+    )
+
+    review = db.query(Review).filter(Review.change_id == change.id).first()
+    result["review_status"] = review.status.value if review else None
+    result["review_id"] = review.id if review else None
 
     if change.regulation:
         result["regulation"] = change.regulation
@@ -138,5 +154,9 @@ def mark_change_reviewed(change_id: str, db: Session = Depends(get_db)):
     if not change:
         raise HTTPException(status_code=404, detail="变更记录不存在")
     change.is_reviewed = True
+    review = db.query(Review).filter(Review.change_id == change_id).first()
+    if review and review.status == ReviewStatus.PENDING:
+        review.status = ReviewStatus.CONFIRMED
+        review.completed_at = datetime.utcnow()
     db.commit()
     return {"id": change_id, "is_reviewed": True}

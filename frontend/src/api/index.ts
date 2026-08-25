@@ -85,8 +85,10 @@ export const reviewsApi = {
     api.get<PaginatedResponse<Review>>('/reviews', { params }).then(r => r.data),
   get: (id: string) =>
     api.get<Review>(`/reviews/${id}`).then(r => r.data),
-  claim: (id: string, reviewerId: string, reviewerName: string) =>
-    api.post<Review>(`/reviews/${id}/claim?reviewer_id=${reviewerId}&reviewer_name=${encodeURIComponent(reviewerName)}`).then(r => r.data),
+  getByChangeId: (changeId: string) =>
+    api.get<Review>(`/reviews/by-change/${changeId}`).then(r => r.data),
+  claim: (reviewId: string, reviewerId: string, reviewerName: string) =>
+    api.post<Review>(`/reviews/${reviewId}/claim?reviewer_id=${reviewerId}&reviewer_name=${encodeURIComponent(reviewerName)}`).then(r => r.data),
   update: (id: string, data: Partial<Review>) =>
     api.put<Review>(`/reviews/${id}`, data).then(r => r.data),
   getStats: () =>

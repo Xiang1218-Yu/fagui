@@ -66,6 +66,23 @@ def list_reviews(
     )
 
 
+@router.get("/stats/summary")
+def review_stats(db: Session = Depends(get_db)):
+    stats = {}
+    for status in ReviewStatus:
+        count = db.query(func.count(Review.id)).filter(Review.status == status).scalar()
+        stats[status.value] = count
+    return stats
+
+
+@router.get("/by-change/{change_id}", response_model=ReviewResponse)
+def get_review_by_change(change_id: str, db: Session = Depends(get_db)):
+    review = db.query(Review).filter(Review.change_id == change_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="该变更暂无复核记录")
+    return review
+
+
 @router.get("/{review_id}", response_model=ReviewResponse)
 def get_review(review_id: str, db: Session = Depends(get_db)):
     review = db.query(Review).filter(Review.id == review_id).first()
@@ -121,12 +138,3 @@ def update_review(review_id: str, review_data: ReviewUpdate, db: Session = Depen
     db.commit()
     db.refresh(review)
     return review
-
-
-@router.get("/stats/summary")
-def review_stats(db: Session = Depends(get_db)):
-    stats = {}
-    for status in ReviewStatus:
-        count = db.query(func.count(Review.id)).filter(Review.status == status).scalar()
-        stats[status.value] = count
-    return stats

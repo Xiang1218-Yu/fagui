@@ -72,7 +72,7 @@ export default function Notifications() {
       dataIndex: 'title',
       key: 'title',
       ellipsis: true,
-      render: (text: string, record: { status: string; change_id?: string }) => (
+      render: (text: string, record: { id: string; status: string; change_id?: string }) => (
         <Space>
           {record.status !== 'read' && <Badge status="processing" />}
           <a
