@@ -182,7 +182,7 @@ def _process_page(db: Session, source: Source, run: CrawlRun, url: str,
         run_id=run.id, document_id=doc.id, kind="page", url=url,
         content_type=result.content_type, http_status=result.status_code,
         raw_path=raw_path, text_path=text_path, content_hash=body_hash,
-        text_excerpt=body_text[:800],
+        text_excerpt=body_text[:800], revision_note=revision,
     )
     db.add(snap)
     db.flush()
@@ -196,18 +196,33 @@ def _process_page(db: Session, source: Source, run: CrawlRun, url: str,
             diff_text="", similarity=0.0,
         )
         changes += 1
-    elif prev.content_hash != body_hash:
-        old_text = storage.read_text(prev.text_path) or prev.text_excerpt
-        similarity = diff.similarity_ratio(old_text, body_text)
-        summary = diff.summarize_diff(old_text, body_text)
-        if revision:
-            summary += f" 修订记录: {revision}"
-        _create_change(
-            db, doc, run, ChangeType.body_changed, prev, snap,
-            summary=summary, diff_text=diff.unified_diff(old_text, body_text),
-            similarity=similarity,
-        )
-        changes += 1
+    else:
+        body_changed = prev.content_hash != body_hash
+        # revision / metadata is tracked independently so it is not lost when
+        # the body is unchanged, and is not silently folded into a body change.
+        revision_changed = (prev.revision_note or "") != (revision or "")
+
+        if body_changed:
+            old_text = storage.read_text(prev.text_path) or prev.text_excerpt
+            similarity = diff.similarity_ratio(old_text, body_text)
+            summary = diff.summarize_diff(old_text, body_text)
+            _create_change(
+                db, doc, run, ChangeType.body_changed, prev, snap,
+                summary=summary, diff_text=diff.unified_diff(old_text, body_text),
+                similarity=similarity,
+            )
+            changes += 1
+
+        if revision_changed:
+            old_rev = prev.revision_note or "（无）"
+            new_rev = revision or "（无）"
+            _create_change(
+                db, doc, run, ChangeType.metadata_changed, prev, snap,
+                summary=f"修订记录发生变化：旧值[{old_rev}] → 新值[{new_rev}]。",
+                diff_text=diff.unified_diff(prev.revision_note or "", revision or ""),
+                similarity=diff.similarity_ratio(prev.revision_note or "", revision or ""),
+            )
+            changes += 1
 
     doc.latest_body_hash = body_hash
 

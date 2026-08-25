@@ -171,6 +171,7 @@ class Snapshot(Base):
     text_path: Mapped[str] = mapped_column(String(600), default="")  # extracted text path
     content_hash: Mapped[str] = mapped_column(String(64), index=True, default="")
     text_excerpt: Mapped[str] = mapped_column(Text, default="")
+    revision_note: Mapped[str] = mapped_column(String(500), default="")  # 修订记录/发布日期等元数据
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     run: Mapped["CrawlRun"] = relationship(back_populates="snapshots")

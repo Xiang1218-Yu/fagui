@@ -53,6 +53,7 @@ export default function Changes() {
           <option value="new">新增法规</option>
           <option value="body_changed">正文变化</option>
           <option value="attachment_changed">附件变化</option>
+          <option value="metadata_changed">修订记录变化</option>
         </select>
         <button className="btn" onClick={load}>刷新</button>
       </div>

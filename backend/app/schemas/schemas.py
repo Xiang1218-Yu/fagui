@@ -87,6 +87,7 @@ class SnapshotOut(ORMModel):
     http_status: int
     content_hash: str
     text_excerpt: str
+    revision_note: str = ""
     captured_at: datetime
 
 
